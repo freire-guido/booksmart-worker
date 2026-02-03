@@ -210,7 +210,7 @@ const runExtraction = async ({ emailTitle, emailSender, emailBody }) => {
   const response = await openai.responses.create({
     model: 'gpt-5-nano',
     prompt: { id: process.env.OPENAI_PROMPT_ID },
-    response_format: { type: 'json_schema', json_schema: BOOKING_SCHEMA },
+    text: { format: { type: 'json_schema', json_schema: BOOKING_SCHEMA } },
     input: [
       {
         role: 'user',
