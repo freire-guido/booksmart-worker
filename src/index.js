@@ -226,18 +226,46 @@ app.post('/webhook/gmail', async (req, res) => {
       return res.status(404).send('User not found');
     }
 
-    const extraction =
-      response.output?.[0]?.content?.[0]?.parsed ||
-      safeJsonParse(responseText);
-
-    if (!extraction || !extraction.booking) {
-      console.log('No booking extracted');
-      return res.status(200).send('OK');
-    }
-
     if (!emailId) {
       console.log('Missing email id');
       return res.status(400).send('Missing email id');
+    }
+
+    const extraction =
+      response.output?.[0]?.content?.[0]?.parsed ||
+      safeJsonParse(responseText);
+    const classification = extraction?.classification || 'not_booking';
+
+    const { error: processedError } = await supabase
+      .from('processed_emails')
+      .upsert(
+        {
+          user_id: user.id,
+          email_id: emailId,
+          classification,
+        },
+        { onConflict: 'user_id,email_id' }
+      );
+
+    if (processedError) {
+      console.error('Supabase processed_emails upsert error:', processedError);
+      return res.status(500).send('Processed email insert failed');
+    }
+
+    const bookingClassifications = [
+      'new_booking',
+      'reschedule',
+      'cancellation',
+    ];
+
+    if (!bookingClassifications.includes(classification)) {
+      console.log('Email classified as non-booking');
+      return res.status(200).send('OK');
+    }
+
+    if (!extraction?.booking) {
+      console.log('No booking extracted');
+      return res.status(200).send('OK');
     }
 
     const booking = extraction.booking;
