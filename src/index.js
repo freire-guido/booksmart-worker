@@ -8,10 +8,6 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const PROMPT_ID =
-  process.env.OPENAI_PROMPT_ID ||
-  'pmpt_698226d677a48190b58956ab4f21b79501be44bba37e7386';
-
 // Health check
 app.get('/', (req, res) => {
   res.send('booksmart-worker running');
@@ -57,11 +53,11 @@ app.post('/webhook/gmail', async (req, res) => {
 
     const response = await openai.responses.create({
       model: 'gpt-5-nano',
-      prompt: { id: PROMPT_ID },
+      prompt: { id: process.env.OPENAI_PROMPT_ID },
       input: [
         {
           role: 'user',
-          content: [{ type: 'text', text: inputText }],
+          content: [{ type: 'input_text', text: inputText }],
         },
       ],
     });
