@@ -61,6 +61,7 @@ const BOOKING_SCHEMA = {
               'tripadvisor',
               'booking_com',
               'expedia',
+              'meitre',
               'other',
             ],
           },
