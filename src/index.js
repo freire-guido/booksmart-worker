@@ -175,6 +175,36 @@ const getHeaderValue = (headers, name) => {
   return match?.value || '';
 };
 
+const LABEL_PREFIX = 'BookSmart';
+
+const getOrCreateLabelId = async (gmail, labelName) => {
+  const {
+    data: { labels = [] },
+  } = await gmail.users.labels.list({ userId: 'me' });
+  const existing = labels.find(
+    (l) => l.name && l.name.toLowerCase() === labelName.toLowerCase()
+  );
+  if (existing) {
+    return existing.id;
+  }
+  const {
+    data: { id },
+  } = await gmail.users.labels.create({
+    userId: 'me',
+    requestBody: { name: labelName, type: 'user', labelListVisibility: 'labelShow', messageListVisibility: 'show' },
+  });
+  return id;
+};
+
+const addLabelToMessage = async (gmail, messageId, labelName) => {
+  const labelId = await getOrCreateLabelId(gmail, labelName);
+  await gmail.users.messages.modify({
+    userId: 'me',
+    id: messageId,
+    requestBody: { addLabelIds: [labelId] },
+  });
+};
+
 const getUserByEmail = async (userEmail) => {
   if (!supabase) {
     throw new Error('Supabase not configured');
@@ -304,12 +334,12 @@ const processEmail = async ({
 
   if (!bookingClassifications.includes(classification)) {
     console.log('Email classified as non-booking');
-    return;
+    return { classification };
   }
 
   if (!extraction?.booking) {
     console.log('No booking extracted');
-    return;
+    return { classification };
   }
 
   const booking = extraction.booking;
@@ -346,6 +376,36 @@ const processEmail = async ({
   if (bookingError) {
     throw new Error('Booking insert failed');
   }
+
+  return { classification };
+};
+
+const getGmailClientForEmail = async (emailAddress) => {
+  if (!supabase) {
+    throw new Error('Supabase not configured');
+  }
+  const { data: gmailAccount, error: gmailError } = await supabase
+    .from('gmail_accounts')
+    .select(
+      'google_access_token, google_refresh_token, google_token_expiry'
+    )
+    .eq('email', emailAddress)
+    .maybeSingle();
+
+  if (gmailError || !gmailAccount) {
+    return null;
+  }
+
+  const oauth2Client = createOAuth2Client();
+  oauth2Client.setCredentials({
+    access_token: gmailAccount.google_access_token,
+    refresh_token: gmailAccount.google_refresh_token,
+    expiry_date: gmailAccount.google_token_expiry
+      ? new Date(gmailAccount.google_token_expiry).getTime()
+      : undefined,
+  });
+
+  return google.gmail({ version: 'v1', auth: oauth2Client });
 };
 
 const processGmailNotification = async ({ emailAddress, historyId }) => {
@@ -440,7 +500,7 @@ const processGmailNotification = async ({ emailAddress, historyId }) => {
     const emailPreview = message.data.snippet || null;
     const emailReceivedAt = toTimestamp(message.data.internalDate);
 
-    await processEmail({
+    const result = await processEmail({
       userEmail: emailAddress,
       emailId: message.data.id,
       emailTitle,
@@ -449,6 +509,15 @@ const processGmailNotification = async ({ emailAddress, historyId }) => {
       emailPreview,
       emailReceivedAt,
     });
+
+    if (result?.classification && result.classification !== 'not_booking') {
+      try {
+        const labelName = `${LABEL_PREFIX}/${result.classification}`;
+        await addLabelToMessage(gmail, message.data.id, labelName);
+      } catch (labelErr) {
+        console.error('Failed to add label to message:', labelErr);
+      }
+    }
   }
 };
 
@@ -506,7 +575,7 @@ app.post('/webhook/gmail', async (req, res) => {
         emailPayload.emailAddress ||
         null;
 
-      await processEmail({
+      const result = await processEmail({
         userEmail,
         emailId,
         emailTitle,
@@ -515,6 +584,23 @@ app.post('/webhook/gmail', async (req, res) => {
         emailPreview,
         emailReceivedAt,
       });
+
+      if (
+        result?.classification &&
+        result.classification !== 'not_booking' &&
+        userEmail &&
+        emailId
+      ) {
+        try {
+          const gmail = await getGmailClientForEmail(userEmail);
+          if (gmail) {
+            const labelName = `${LABEL_PREFIX}/${result.classification}`;
+            await addLabelToMessage(gmail, emailId, labelName);
+          }
+        } catch (labelErr) {
+          console.error('Failed to add label to message:', labelErr);
+        }
+      }
     } else if (data.emailAddress && data.historyId) {
       await processGmailNotification({
         emailAddress: data.emailAddress,
