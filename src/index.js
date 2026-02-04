@@ -284,15 +284,15 @@ const processEmail = async ({
     .from('processed_emails')
     .upsert(
       {
-        organization_id: user.organization_id,
-        gmail_account_id: user.id,
+        user_id: user.id,
         email_id: emailId,
         classification,
       },
-      { onConflict: 'organization_id,email_id' }
+      { onConflict: 'user_id,email_id' }
     );
 
   if (processedError) {
+    console.error('processed_emails upsert error:', processedError);
     throw new Error('Processed email insert failed');
   }
 
