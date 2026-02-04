@@ -182,7 +182,7 @@ const getUserByEmail = async (userEmail) => {
 
   const { data: user, error } = await supabase
     .from('gmail_accounts')
-    .select('id')
+    .select('id, organization_id')
     .eq('email', userEmail)
     .maybeSingle();
 
@@ -284,11 +284,12 @@ const processEmail = async ({
     .from('processed_emails')
     .upsert(
       {
-        user_id: user.id,
+        organization_id: user.organization_id,
+        gmail_account_id: user.id,
         email_id: emailId,
         classification,
       },
-      { onConflict: 'user_id,email_id' }
+      { onConflict: 'organization_id,email_id' }
     );
 
   if (processedError) {
@@ -313,7 +314,8 @@ const processEmail = async ({
 
   const booking = extraction.booking;
   const bookingRow = {
-    user_id: user.id,
+    organization_id: user.organization_id,
+    created_by_user_id: user.id,
     platform: booking.platform,
     platform_booking_id: booking.platform_booking_id,
     guest_name: booking.guest_name,
@@ -338,7 +340,7 @@ const processEmail = async ({
   const { error: bookingError } = await supabase
     .from('bookings')
     .upsert(bookingRow, {
-      onConflict: 'user_id,platform,platform_booking_id',
+      onConflict: 'organization_id,platform,platform_booking_id',
     });
 
   if (bookingError) {
