@@ -387,7 +387,7 @@ const getGmailClientForEmail = async (emailAddress) => {
   const { data: gmailAccount, error: gmailError } = await supabase
     .from('gmail_accounts')
     .select(
-      'google_access_token, google_refresh_token, google_token_expiry'
+      'id', 'google_access_token, google_refresh_token, google_token_expiry'
     )
     .eq('email', emailAddress)
     .maybeSingle();
@@ -486,12 +486,26 @@ const processGmailNotification = async ({ emailAddress, historyId }) => {
   }
 
   for (const messageId of messageIds) {
+    // Dedup check - insert first, skip if already exists
+    const { error: dedupError } = await supabase
+      .from('processed_emails')
+      .insert({
+        user_id: gmailAccount.id,
+        email_id: messageId,
+        classification: 'processing',
+      });
+  
+    if (dedupError?.code === '23505') {
+      console.log(`Skipping already processed: ${messageId}`);
+      continue;
+    }
+  
     const message = await gmail.users.messages.get({
       userId: 'me',
       id: messageId,
       format: 'full',
     });
-
+    
     const payload = message.data.payload;
     const headers = payload?.headers || [];
     const emailTitle = getHeaderValue(headers, 'Subject');
@@ -499,7 +513,7 @@ const processGmailNotification = async ({ emailAddress, historyId }) => {
     const emailBody = extractBodyFromPayload(payload);
     const emailPreview = message.data.snippet || null;
     const emailReceivedAt = toTimestamp(message.data.internalDate);
-
+  
     const result = await processEmail({
       userEmail: emailAddress,
       emailId: message.data.id,
@@ -509,7 +523,14 @@ const processGmailNotification = async ({ emailAddress, historyId }) => {
       emailPreview,
       emailReceivedAt,
     });
-
+  
+    // Update with actual classification
+    await supabase
+      .from('processed_emails')
+      .update({ classification: result?.classification || 'not_booking' })
+      .eq('user_id', gmailAccount.id)
+      .eq('email_id', messageId);
+  
     if (result?.classification && result.classification !== 'not_booking') {
       try {
         const labelName = `${LABEL_PREFIX}/${result.classification}`;
@@ -519,7 +540,7 @@ const processGmailNotification = async ({ emailAddress, historyId }) => {
       }
     }
   }
-};
+}
 
 // Health check
 app.get('/', (req, res) => {
