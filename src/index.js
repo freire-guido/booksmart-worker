@@ -26,6 +26,7 @@ const BOOKING_SCHEMA = {
           'cancellation',
           'inquiry',
           'not_booking',
+          'processing',
         ],
       },
       confidence: { type: 'number' },
@@ -505,7 +506,7 @@ const processGmailNotification = async ({ emailAddress, historyId }) => {
       id: messageId,
       format: 'full',
     });
-    
+
     const payload = message.data.payload;
     const headers = payload?.headers || [];
     const emailTitle = getHeaderValue(headers, 'Subject');
