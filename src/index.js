@@ -558,7 +558,7 @@ const processGmailNotification = async ({ emailAddress, historyId }) => {
       .eq('user_id', gmailAccount.id)
       .eq('email_id', messageId);
   
-    if (result?.classification && result.classification !== 'not_booking') {
+    if (result?.classification && result.classification !== 'not_booking' && result.classification !== 'processing') {
       try {
         const labelName = `${LABEL_PREFIX}/${result.classification}`;
         await addLabelToMessage(gmail, message.data.id, labelName);
@@ -636,6 +636,7 @@ app.post('/webhook/gmail', async (req, res) => {
       if (
         result?.classification &&
         result.classification !== 'not_booking' &&
+        result.classification !== 'processing' &&
         userEmail &&
         emailId
       ) {
