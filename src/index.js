@@ -297,6 +297,18 @@ const processEmail = async ({
     throw new Error(`User not found for ${userEmail}`);
   }
 
+  // Skip if already processed (e.g. webhook + history both fired, or duplicate delivery)
+  const { data: existing } = await supabase
+    .from('processed_emails')
+    .select('classification')
+    .eq('user_id', user.id)
+    .eq('email_id', emailId)
+    .maybeSingle();
+  if (existing) {
+    console.log(`Already processed ${emailId}, classification: ${existing.classification}`);
+    return { classification: existing.classification };
+  }
+
   const { extraction, responseText } = await runExtraction({
     emailTitle,
     emailSender,
@@ -420,7 +432,7 @@ const processGmailNotification = async ({ emailAddress, historyId }) => {
   const { data: gmailAccount, error: gmailError } = await supabase
     .from('gmail_accounts')
     .select(
-      'google_access_token, google_refresh_token, google_token_expiry, gmail_history_id'
+      'id, google_access_token, google_refresh_token, google_token_expiry, gmail_history_id'
     )
     .eq('email', emailAddress)
     .maybeSingle();
@@ -500,12 +512,26 @@ const processGmailNotification = async ({ emailAddress, historyId }) => {
       console.log(`Skipping already processed: ${messageId}`);
       continue;
     }
-  
-    const message = await gmail.users.messages.get({
-      userId: 'me',
-      id: messageId,
-      format: 'full',
-    });
+
+    let message;
+    try {
+      message = await gmail.users.messages.get({
+        userId: 'me',
+        id: messageId,
+        format: 'full',
+      });
+    } catch (err) {
+      if (err.code === 404 || err.response?.status === 404) {
+        console.log(`Message not found (404), skipping: ${messageId}`);
+        await supabase
+          .from('processed_emails')
+          .update({ classification: 'fetch_failed' })
+          .eq('user_id', gmailAccount.id)
+          .eq('email_id', messageId);
+        continue;
+      }
+      throw err;
+    }
 
     const payload = message.data.payload;
     const headers = payload?.headers || [];
