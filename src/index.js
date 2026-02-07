@@ -432,7 +432,7 @@ const processGmailNotification = async ({ emailAddress, historyId }) => {
   const { data: gmailAccount, error: gmailError } = await supabase
     .from('gmail_accounts')
     .select(
-      'id, google_access_token, google_refresh_token, google_token_expiry, gmail_history_id'
+      'id, process_emails, google_access_token, google_refresh_token, google_token_expiry, gmail_history_id'
     )
     .eq('email', emailAddress)
     .maybeSingle();
@@ -443,6 +443,11 @@ const processGmailNotification = async ({ emailAddress, historyId }) => {
 
   if (!gmailAccount) {
     throw new Error(`No gmail account for ${emailAddress}`);
+  }
+
+  if (!gmailAccount.process_emails) {
+    console.log(`Skipping Gmail notification for ${emailAddress}: process_emails is false`);
+    return;
   }
 
   const oauth2Client = createOAuth2Client();
@@ -622,6 +627,18 @@ app.post('/webhook/gmail', async (req, res) => {
         emailPayload.user_email ||
         emailPayload.emailAddress ||
         null;
+
+      if (userEmail) {
+        const { data: acc } = await supabase
+          .from('gmail_accounts')
+          .select('process_emails')
+          .eq('email', userEmail)
+          .maybeSingle();
+        if (acc && !acc.process_emails) {
+          console.log(`Skipping email processing for ${userEmail}: process_emails is false`);
+          return res.status(200).send('OK');
+        }
+      }
 
       const result = await processEmail({
         userEmail,
