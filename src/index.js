@@ -298,13 +298,14 @@ const processEmail = async ({
   }
 
   // Skip if already processed (e.g. webhook + history both fired, or duplicate delivery)
+  // Treat 'processing' as stale — re-run extraction and update
   const { data: existing } = await supabase
     .from('processed_emails')
     .select('classification')
     .eq('user_id', user.id)
     .eq('email_id', emailId)
     .maybeSingle();
-  if (existing) {
+  if (existing && existing.classification !== 'processing') {
     console.log(`Already processed ${emailId}, classification: ${existing.classification}`);
     return { classification: existing.classification };
   }
