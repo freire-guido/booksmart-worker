@@ -97,6 +97,28 @@ const supabase =
       })
     : null;
 
+const notifyFrontendRevalidate = async (organizationId) => {
+  const baseUrl = process.env.BOOKSMART_FRONT_URL || process.env.FRONTEND_URL;
+  const secret = process.env.REVALIDATE_SECRET;
+  if (!baseUrl || !secret) return;
+  try {
+    const url = `${baseUrl.replace(/\/$/, '')}/api/revalidate/bookings`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'x-revalidate-secret': secret,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ organization_id: organizationId ?? undefined }),
+    });
+    if (!res.ok) {
+      console.warn('Revalidate request failed:', res.status, await res.text());
+    }
+  } catch (err) {
+    console.warn('Revalidate request error:', err.message);
+  }
+};
+
 const createOAuth2Client = () => {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
@@ -390,6 +412,8 @@ const processEmail = async ({
   if (bookingError) {
     throw new Error('Booking insert failed');
   }
+
+  await notifyFrontendRevalidate(user.organization_id);
 
   return { classification };
 };
