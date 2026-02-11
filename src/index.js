@@ -271,12 +271,14 @@ const runExtraction = async ({ emailTitle, emailSender, emailBody, promptId, des
     .filter(Boolean)
     .join('\n');
 
+  const promptConfig = { id: promptId || process.env.OPENAI_PROMPT_ID };
+  if (description) {
+    promptConfig.variables = { description };
+  }
+
   const response = await openai.responses.create({
     model: 'gpt-5-nano',
-    prompt: {
-      id: promptId || process.env.OPENAI_PROMPT_ID,
-      variables: { description: description || '' },
-    },
+    prompt: promptConfig,
     text: {
       format: {
         type: 'json_schema',
