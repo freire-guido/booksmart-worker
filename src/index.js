@@ -246,7 +246,17 @@ const getUserByEmail = async (userEmail) => {
   return user;
 };
 
-const runExtraction = async ({ emailTitle, emailSender, emailBody }) => {
+const getOrganization = async (organizationId) => {
+  const { data, error } = await supabase
+    .from('organizations')
+    .select('prompt_id, description')
+    .eq('id', organizationId)
+    .maybeSingle();
+  if (error) throw new Error('Organization lookup failed');
+  return data;
+};
+
+const runExtraction = async ({ emailTitle, emailSender, emailBody, promptId, description }) => {
   const hasContent = Boolean(emailTitle || emailSender || emailBody);
   if (!hasContent) {
     return { extraction: null, responseText: '' };
@@ -261,9 +271,14 @@ const runExtraction = async ({ emailTitle, emailSender, emailBody }) => {
     .filter(Boolean)
     .join('\n');
 
+  const promptConfig = { id: promptId || process.env.OPENAI_PROMPT_ID };
+  if (description) {
+    promptConfig.variables = { description };
+  }
+
   const response = await openai.responses.create({
     model: 'gpt-5-nano',
-    prompt: { id: process.env.OPENAI_PROMPT_ID },
+    prompt: promptConfig,
     text: {
       format: {
         type: 'json_schema',
@@ -332,10 +347,14 @@ const processEmail = async ({
     return { classification: existing.classification };
   }
 
+  const org = await getOrganization(user.organization_id);
+
   const { extraction, responseText } = await runExtraction({
     emailTitle,
     emailSender,
     emailBody,
+    promptId: org?.prompt_id,
+    description: org?.description,
   });
 
   if (responseText) {
